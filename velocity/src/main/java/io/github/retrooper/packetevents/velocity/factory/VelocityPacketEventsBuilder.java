@@ -18,10 +18,6 @@
 
 package io.github.retrooper.packetevents.velocity.factory;
 
-import java.util.logging.Level;
-
-import org.jetbrains.annotations.Nullable;
-
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.PacketEventsAPI;
 import com.github.retrooper.packetevents.event.UserLoginEvent;
@@ -32,16 +28,18 @@ import com.github.retrooper.packetevents.manager.protocol.ProtocolManager;
 import com.github.retrooper.packetevents.manager.server.ServerManager;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.netty.NettyManager;
-import com.github.retrooper.packetevents.protocol.ProtocolVersion;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.settings.PacketEventsSettings;
 import com.github.retrooper.packetevents.util.LogManager;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
+import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.plugin.PluginContainer;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
-
+import com.velocitypowered.api.proxy.ServerConnection;
+import io.github.retrooper.packetevents.bstats.Metrics;
 import io.github.retrooper.packetevents.impl.netty.NettyManagerImpl;
 import io.github.retrooper.packetevents.impl.netty.manager.player.PlayerManagerAbstract;
 import io.github.retrooper.packetevents.impl.netty.manager.protocol.ProtocolManagerAbstract;
@@ -49,6 +47,13 @@ import io.github.retrooper.packetevents.impl.netty.manager.server.ServerManagerA
 import io.github.retrooper.packetevents.injector.VelocityPipelineInjector;
 import io.github.retrooper.packetevents.manager.PlayerManagerImpl;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+
+import java.lang.reflect.Field;
+import java.nio.file.Path;
+import java.util.Objects;
+import java.util.logging.Level;
 
 public class VelocityPacketEventsBuilder {
     private static PacketEventsAPI<PluginContainer> INSTANCE;
@@ -57,53 +62,92 @@ public class VelocityPacketEventsBuilder {
         INSTANCE = null;
     }
 
-    public static PacketEventsAPI<PluginContainer> build(ProxyServer server, PluginContainer plugin) {
+    public static PacketEventsAPI<PluginContainer> build(ProxyServer server, PluginContainer plugin, Logger logger, Path dataDirectory) {
         if (INSTANCE == null) {
-            INSTANCE = buildNoCache(server, plugin);
+            INSTANCE = buildNoCache(server, plugin, logger, dataDirectory);
         }
         return INSTANCE;
     }
 
-    public static PacketEventsAPI<PluginContainer> build(ProxyServer server, PluginContainer plugin,
-            PacketEventsSettings settings) {
+    public static PacketEventsAPI<PluginContainer> build(ProxyServer server, PluginContainer plugin, Logger logger, Path dataDirectory,
+                                                         PacketEventsSettings settings) {
         if (INSTANCE == null) {
-            INSTANCE = buildNoCache(server, plugin, settings);
+            INSTANCE = buildNoCache(server, plugin, logger, dataDirectory, settings);
         }
         return INSTANCE;
     }
 
-    public static PacketEventsAPI<PluginContainer> buildNoCache(ProxyServer server, PluginContainer plugin) {
-        return buildNoCache(server, plugin, new PacketEventsSettings());
+    public static PacketEventsAPI<PluginContainer> buildNoCache(ProxyServer server, PluginContainer plugin, Logger logger, Path dataDirectory) {
+        return buildNoCache(server, plugin, logger, dataDirectory, new PacketEventsSettings());
     }
 
-    public static PacketEventsAPI<PluginContainer> buildNoCache(ProxyServer server, PluginContainer plugin,
-            PacketEventsSettings inSettings) {
+    public static PacketEventsAPI<PluginContainer> buildNoCache(ProxyServer server, PluginContainer plugin, Logger logger, Path dataDirectory,
+                                                                PacketEventsSettings inSettings) {
         return new PacketEventsAPI<PluginContainer>() {
             private final PacketEventsSettings settings = inSettings;
             // TODO Implement platform version
             private final ProtocolManager protocolManager = new ProtocolManagerAbstract() {
                 @Override
-                public ProtocolVersion getPlatformVersion() {
-                    return ProtocolVersion.UNKNOWN;
+                public com.github.retrooper.packetevents.protocol.ProtocolVersion getPlatformVersion() {
+                    return com.github.retrooper.packetevents.protocol.ProtocolVersion.UNKNOWN;
                 }
             };
             private final ServerManager serverManager = new ServerManagerAbstract() {
+
+                private final Field connectionInFlight, registeredServer;
                 private ServerVersion version;
+
+                {
+                    try {
+                        Class<?> playerClass = Class.forName("com.velocitypowered.proxy.connection.client.ConnectedPlayer");
+                        this.connectionInFlight = playerClass.getDeclaredField("connectionInFlight");
+                        this.connectionInFlight.setAccessible(true);
+                        Class<?> serverConnectionClass = Class.forName("com.velocitypowered.proxy.connection.backend.VelocityServerConnection");
+                        this.registeredServer = serverConnectionClass.getDeclaredField("registeredServer");
+                        this.registeredServer.setAccessible(true);
+                    } catch (ReflectiveOperationException exception) {
+                        throw new RuntimeException("Error while resolving methods for getting player server connection");
+                    }
+                }
 
                 @Override
                 public ServerVersion getVersion() {
-                    if (version == null) {
-                        String velocityVersion = com.velocitypowered.api.network.ProtocolVersion.MAXIMUM_VERSION
-                                .getName();
-
-                        for (final ServerVersion val : ServerVersion.values()) {
-                            if (val.getReleaseName().contains(velocityVersion)) {
-                                return version = val;
+                    if (this.version == null) {
+                        ProtocolVersion[] velVers = ProtocolVersion.values();
+                        for (int i = velVers.length - 1; i >= 0; i--) {
+                            ProtocolVersion velVer = velVers[i];
+                            if (velVer.isLegacy() || velVer.isUnknown()) {
+                                continue; // skip
+                            }
+                            String velVerStr = velVer.getVersionIntroducedIn();
+                            for (ServerVersion peVer : ServerVersion.values()) {
+                                if (peVer.getReleaseName().contains(velVerStr)) {
+                                    this.version = peVer;
+                                    return peVer;
+                                }
                             }
                         }
-                        return null;
+                        throw new IllegalStateException("Can't find any version compatible with this velocity instance");
                     }
-                    return version;
+                    return this.version;
+                }
+
+                private Object getTargetServer(Player player) {
+                    ServerConnection server = player.getCurrentServer().orElse(null);
+                    if (server != null) {
+                        return server;
+                    }
+                    try {
+                        return this.registeredServer.get(this.connectionInFlight.get(player));
+                    } catch (IllegalAccessException exception) {
+                        throw new RuntimeException(exception);
+                    }
+                }
+
+                @Override
+                public Object getRegistryCacheKey(User user, ClientVersion version) {
+                    Player player = server.getPlayer(user.getUUID()).orElse(null);
+                    return player == null ? null : Objects.hash(this.getTargetServer(player), version);
                 }
             };
 
@@ -119,6 +163,7 @@ public class VelocityPacketEventsBuilder {
             };
             private boolean loaded;
             private boolean initialized;
+            private boolean terminated;
 
             @Override
             public void load() {
@@ -155,6 +200,10 @@ public class VelocityPacketEventsBuilder {
                             (event) -> {
                                 Player player = event.getPlayer();
                                 Object channel = PacketEvents.getAPI().getPlayerManager().getChannel(player);
+                                // This only happens if a player is a fake player
+                                if(channel == null) {
+                                    return;
+                                }
                                 PacketEvents.getAPI().getInjector().setPlayer(channel, player);
 
                                 User user = PacketEvents.getAPI().getPlayerManager().getUser(player);
@@ -168,8 +217,14 @@ public class VelocityPacketEventsBuilder {
                         getUpdateChecker().handleUpdateCheck();
                     }
 
-                    if (settings.isbStatsEnabled()) {
-                        // TODO Cross-platform metrics?
+                    Object instance = plugin.getInstance().orElse(null);
+                    if (instance != null) {
+                        Metrics metrics = Metrics.createInstance(plugin, server, logger, dataDirectory, 11327);
+
+                        //Just to have an idea of which versions of packetevents people use
+                        metrics.addCustomChart(new Metrics.SimplePie("packetevents_version", () -> {
+                            return getVersion().toStringWithoutSnapshot();
+                        }));
                     }
 
                     PacketType.Play.Client.load();
@@ -191,7 +246,13 @@ public class VelocityPacketEventsBuilder {
                     // Unregister all our listeners
                     getEventManager().unregisterAllListeners();
                     initialized = false;
+                    terminated = true;
                 }
+            }
+
+            @Override
+            public boolean isTerminated() {
+                return terminated;
             }
 
             @Override

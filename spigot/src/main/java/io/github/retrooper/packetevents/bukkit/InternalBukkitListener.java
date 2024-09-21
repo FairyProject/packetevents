@@ -22,7 +22,7 @@ import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.util.FakeChannelUtil;
 import io.github.retrooper.packetevents.injector.SpigotChannelInjector;
-import io.github.retrooper.packetevents.util.FoliaCompatUtil;
+import io.github.retrooper.packetevents.util.folia.FoliaScheduler;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -48,9 +48,11 @@ public class InternalBukkitListener implements Listener {
             //We did not inject this user
             Object channel = PacketEvents.getAPI().getPlayerManager().getChannel(player);
             //Check if it is a fake connection...
-            if (!FakeChannelUtil.isFakeChannel(channel)) {
+            if (!FakeChannelUtil.isFakeChannel(channel) && (!PacketEvents.getAPI().isTerminated() || PacketEvents.getAPI().getSettings().isKickIfTerminated())) {
                 //Kick them, if they are not a fake player.
-                FoliaCompatUtil.runTaskForEntity(player, plugin, () -> player.kickPlayer("PacketEvents 2.0 failed to inject"), null, 0);
+                FoliaScheduler.getRegionScheduler().runDelayed(plugin, player.getLocation(), (o) -> {
+                    player.kickPlayer("PacketEvents 2.0 failed to inject");
+                }, 0);
             }
             return;
         }

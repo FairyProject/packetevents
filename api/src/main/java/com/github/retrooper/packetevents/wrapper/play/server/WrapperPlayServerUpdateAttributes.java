@@ -20,14 +20,53 @@ package com.github.retrooper.packetevents.wrapper.play.server;
 
 import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.attribute.Attribute;
+import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.resources.ResourceLocation;
 import com.github.retrooper.packetevents.wrapper.PacketWrapper;
+import org.jetbrains.annotations.ApiStatus;
 
+import java.nio.charset.StandardCharsets;
+import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class WrapperPlayServerUpdateAttributes extends PacketWrapper<WrapperPlayServerUpdateAttributes> {
+
+    private static final List<Map.Entry<String, Attribute>> PRE_1_16_ATTRIBUTES = Collections.unmodifiableList(Arrays.asList(
+            new SimpleEntry<>("generic.maxHealth", Attributes.GENERIC_MAX_HEALTH),
+            new SimpleEntry<>("Max Health", Attributes.GENERIC_MAX_HEALTH),
+            new SimpleEntry<>("zombie.spawnReinforcements", Attributes.ZOMBIE_SPAWN_REINFORCEMENTS),
+            new SimpleEntry<>("Spawn Reinforcements Chance", Attributes.ZOMBIE_SPAWN_REINFORCEMENTS),
+            new SimpleEntry<>("horse.jumpStrength", Attributes.HORSE_JUMP_STRENGTH),
+            new SimpleEntry<>("Jump Strength", Attributes.HORSE_JUMP_STRENGTH),
+            new SimpleEntry<>("generic.followRange", Attributes.GENERIC_FOLLOW_RANGE),
+            new SimpleEntry<>("Follow Range", Attributes.GENERIC_FOLLOW_RANGE),
+            new SimpleEntry<>("generic.knockbackResistance", Attributes.GENERIC_KNOCKBACK_RESISTANCE),
+            new SimpleEntry<>("Knockback Resistance", Attributes.GENERIC_KNOCKBACK_RESISTANCE),
+            new SimpleEntry<>("generic.movementSpeed", Attributes.GENERIC_MOVEMENT_SPEED),
+            new SimpleEntry<>("Movement Speed", Attributes.GENERIC_MOVEMENT_SPEED),
+            new SimpleEntry<>("generic.flyingSpeed", Attributes.GENERIC_FLYING_SPEED),
+            new SimpleEntry<>("Flying Speed", Attributes.GENERIC_FLYING_SPEED),
+            new SimpleEntry<>("generic.attackDamage", Attributes.GENERIC_ATTACK_DAMAGE),
+            new SimpleEntry<>("generic.attackKnockback", Attributes.GENERIC_ATTACK_KNOCKBACK),
+            new SimpleEntry<>("generic.attackSpeed", Attributes.GENERIC_ATTACK_SPEED),
+            new SimpleEntry<>("generic.armorToughness", Attributes.GENERIC_ARMOR_TOUGHNESS),
+            new SimpleEntry<>("generic.armor", Attributes.GENERIC_ARMOR),
+            new SimpleEntry<>("generic.luck", Attributes.GENERIC_LUCK)
+    ));
+    private static final Map<String, Attribute> PRE_1_16_ATTRIBUTES_MAP = PRE_1_16_ATTRIBUTES.stream()
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    private static final Map<Attribute, String> PRE_1_16_ATTRIBUTES_RMAP = PRE_1_16_ATTRIBUTES.stream()
+            .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey,
+                    (s1, s2) -> s1));
+
     private int entityID;
     private List<Property> properties;
 
@@ -57,10 +96,20 @@ public class WrapperPlayServerUpdateAttributes extends PacketWrapper<WrapperPlay
         }
         properties = new ArrayList<>(propertyCount);
         for (int i = 0; i < propertyCount; i++) {
-            //NOTE: Some people report errors that this limit check breaks for them, lets try removing it
-            //int maxKeyLength = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16) ? 32767 : 64;
-            int maxKeyLength = 32767;
-            String key = readString(maxKeyLength);
+            Attribute attribute;
+            if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20_5)) {
+                attribute = this.readMappedEntity(Attributes::getById);
+            } else if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16)) {
+                attribute = Attributes.getByName(this.readIdentifier().toString());
+            } else {
+                String attributeName = this.readString(64);
+                attribute = PRE_1_16_ATTRIBUTES_MAP.get(attributeName);
+                if (attribute == null) {
+                    throw new IllegalStateException("Can't find attribute for name " + attributeName
+                            + " (version: " + this.serverVersion.name() + ")");
+                }
+            }
+
             double value = readDouble();
             int modifiersLength;
             if (serverVersion == ServerVersion.V_1_7_10) {
@@ -70,15 +119,22 @@ public class WrapperPlayServerUpdateAttributes extends PacketWrapper<WrapperPlay
             }
             List<PropertyModifier> modifiers = new ArrayList<>(modifiersLength);
             for (int j = 0; j < modifiersLength; j++) {
-                UUID uuid = readUUID();
-                //Name always had this value, and was never part of the protocol, so why include it?
-                //String name = "Unknown synced attribute modifier";
+                ResourceLocation name;
+                UUID uuid;
+                if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_21)) {
+                    name = this.readIdentifier();
+                    uuid = PropertyModifier.generateSemiUniqueId(name);
+                } else {
+                    uuid = this.readUUID();
+                    name = new ResourceLocation(uuid.toString());
+                }
+
                 double amount = readDouble();
                 byte operationIndex = readByte();
                 PropertyModifier.Operation operation = PropertyModifier.Operation.VALUES[operationIndex];
-                modifiers.add(new PropertyModifier(uuid, amount, operation));
+                modifiers.add(new PropertyModifier(name, uuid, amount, operation));
             }
-            properties.add(new Property(key, value, modifiers));
+            this.properties.add(new Property(attribute, value, modifiers));
         }
     }
 
@@ -96,8 +152,14 @@ public class WrapperPlayServerUpdateAttributes extends PacketWrapper<WrapperPlay
             writeInt(properties.size());
         }
         for (Property property : properties) {
-            int maxKeyLength = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16) ? 32767 : 64;
-            writeString(property.key, maxKeyLength);
+            if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20_5)) {
+                this.writeVarInt(property.getAttribute().getId(this.serverVersion.toClientVersion()));
+            } else if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16)) {
+                this.writeIdentifier(property.getAttribute().getName());
+            } else {
+                this.writeString(PRE_1_16_ATTRIBUTES_RMAP.get(property.getAttribute()));
+            }
+
             writeDouble(property.value);
             if (serverVersion == ServerVersion.V_1_7_10) {
                 writeShort(property.modifiers.size());
@@ -105,7 +167,11 @@ public class WrapperPlayServerUpdateAttributes extends PacketWrapper<WrapperPlay
                 writeVarInt(property.modifiers.size());
             }
             for (PropertyModifier modifier : property.modifiers) {
-                writeUUID(modifier.uuid);
+                if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_21)) {
+                    this.writeIdentifier(modifier.name);
+                } else {
+                    this.writeUUID(modifier.uuid);
+                }
                 writeDouble(modifier.amount);
                 writeByte(modifier.operation.ordinal());
             }
@@ -143,21 +209,56 @@ public class WrapperPlayServerUpdateAttributes extends PacketWrapper<WrapperPlay
             public static final Operation[] VALUES = values();
         }
 
-        private UUID uuid;
+        private ResourceLocation name; // added in 1.21
+        private UUID uuid; // removed in 1.21
         private double amount;
         private Operation operation;
 
         public PropertyModifier(UUID uuid, double amount, Operation operation) {
+            this(new ResourceLocation(uuid.toString()), uuid, amount, operation);
+        }
+
+        public PropertyModifier(ResourceLocation name, double amount, Operation operation) {
+            this(name, generateSemiUniqueId(name), amount, operation);
+        }
+
+        public PropertyModifier(ResourceLocation name, UUID uuid, double amount, Operation operation) {
+            this.name = name;
             this.uuid = uuid;
             this.amount = amount;
             this.operation = operation;
         }
 
+        @ApiStatus.Internal
+        public static UUID generateSemiUniqueId(ResourceLocation name) {
+            String extendedName = "packetevents_" + name.toString();
+            return UUID.nameUUIDFromBytes(extendedName.getBytes(StandardCharsets.UTF_8));
+        }
+
+        // added in 1.21
+        public ResourceLocation getName() {
+            return this.name;
+        }
+
+        // added in 1.21
+        public void setName(ResourceLocation name) {
+            this.name = name;
+            this.uuid = generateSemiUniqueId(name);
+        }
+
+        @ApiStatus.Obsolete // unused since 1.21
         public UUID getUUID() {
             return uuid;
         }
 
+        @ApiStatus.Obsolete // unused since 1.21
         public void setUUID(UUID uuid) {
+            this.name = new ResourceLocation(uuid.toString());
+            this.uuid = uuid;
+        }
+
+        public void setNameAndUUID(ResourceLocation name, UUID uuid) {
+            this.name = name;
             this.uuid = uuid;
         }
 
@@ -179,22 +280,38 @@ public class WrapperPlayServerUpdateAttributes extends PacketWrapper<WrapperPlay
     }
 
     public static class Property {
-        private String key;
+
+        private Attribute attribute;
         private double value;
         private List<PropertyModifier> modifiers;
 
+        @Deprecated
         public Property(String key, double value, List<PropertyModifier> modifiers) {
-            this.key = key;
+            this(Attributes.getByName(key), value, modifiers);
+        }
+
+        public Property(Attribute attribute, double value, List<PropertyModifier> modifiers) {
+            this.attribute = attribute;
             this.value = value;
             this.modifiers = modifiers;
         }
 
-        public String getKey() {
-            return key;
+        public Attribute getAttribute() {
+            return this.attribute;
         }
 
+        public void setAttribute(Attribute attribute) {
+            this.attribute = attribute;
+        }
+
+        @Deprecated
+        public String getKey() {
+            return this.getAttribute().getName().toString();
+        }
+
+        @Deprecated
         public void setKey(String key) {
-            this.key = key;
+            this.setAttribute(Attributes.getByName(key));
         }
 
         public double getValue() {

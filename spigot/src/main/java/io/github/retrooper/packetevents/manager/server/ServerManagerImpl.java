@@ -21,7 +21,10 @@ package io.github.retrooper.packetevents.manager.server;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.manager.server.ServerManager;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.util.PEVersion;
+import com.github.retrooper.packetevents.util.mappings.GlobalRegistryHolder;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
@@ -37,13 +40,13 @@ public class ServerManagerImpl implements ServerManager {
         }
         //Our PEVersion class can parse this version and detect if it is a newer version than what is currently supported
         //and account for that properly
-        PEVersion version = new PEVersion(bukkitVersion.substring(0, bukkitVersion.indexOf("-")));
-        PEVersion latestVersion = new PEVersion(ServerVersion.getLatest().getReleaseName());
+        PEVersion version = PEVersion.fromString(bukkitVersion.substring(0, bukkitVersion.indexOf("-")));
+        PEVersion latestVersion = PEVersion.fromString(ServerVersion.getLatest().getReleaseName());
         if (version.isNewerThan(latestVersion)) {
             //We do not support this version yet, so let us warn the user
             plugin.getLogger().warning("[packetevents] We currently do not support the minecraft version "
-                    + version.toString() + ", so things might break. PacketEvents will behave as if the minecraft version were "
-                    + latestVersion.toString() + "!");
+                    + version + ", so things might break. PacketEvents will behave as if the minecraft version were "
+                    + latestVersion + "!");
             return ServerVersion.getLatest();
         }
         for (final ServerVersion val : ServerVersion.reversedValues()) {
@@ -63,5 +66,10 @@ public class ServerManagerImpl implements ServerManager {
             serverVersion = resolveVersionNoCache();
         }
         return serverVersion;
+    }
+
+    @Override
+    public Object getRegistryCacheKey(User user, ClientVersion version) {
+        return GlobalRegistryHolder.getGlobalRegistryCacheKey(user, version);
     }
 }

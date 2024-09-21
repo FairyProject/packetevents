@@ -18,8 +18,16 @@
 
 package com.github.retrooper.packetevents.protocol.particle.data;
 
+import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.color.Color;
+import com.github.retrooper.packetevents.protocol.nbt.NBTCompound;
+import com.github.retrooper.packetevents.protocol.nbt.NBTFloat;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.util.Vector3f;
 import com.github.retrooper.packetevents.wrapper.PacketWrapper;
+
+import static com.github.retrooper.packetevents.protocol.particle.data.ParticleDustData.decodeColor;
+import static com.github.retrooper.packetevents.protocol.particle.data.ParticleDustData.encodeColor;
 
 public class ParticleDustColorTransitionData extends ParticleData {
     //0.01 - 4
@@ -47,8 +55,16 @@ public class ParticleDustColorTransitionData extends ParticleData {
         this.endBlue = endBlue;
     }
 
+    public ParticleDustColorTransitionData(float scale, float[] startRGB, float[] endRGB) {
+        this(scale, startRGB[0], startRGB[1], startRGB[2], endRGB[0], endRGB[1], endRGB[2]);
+    }
+
     public ParticleDustColorTransitionData(float scale, Vector3f startRGB, Vector3f endRGB) {
         this(scale, startRGB.getX(), startRGB.getY(), startRGB.getZ(), endRGB.getX(), endRGB.getY(), endRGB.getZ());
+    }
+
+    public ParticleDustColorTransitionData(float scale, Color start, Color end) {
+        this(scale, start.red() / 255f, start.green() / 255f, start.blue() / 255f, end.red() / 255f, end.green() / 255f, end.blue() / 255f);
     }
 
     public float getScale() {
@@ -111,10 +127,16 @@ public class ParticleDustColorTransitionData extends ParticleData {
         float startRed = wrapper.readFloat();
         float startGreen = wrapper.readFloat();
         float startBlue = wrapper.readFloat();
-        float scale = wrapper.readFloat();
+        float scale = 0f;
+        if (wrapper.getServerVersion().isOlderThan(ServerVersion.V_1_20_5)) {
+            scale = wrapper.readFloat();
+        }
         float endRed = wrapper.readFloat();
         float endGreen = wrapper.readFloat();
         float endBlue = wrapper.readFloat();
+        if (wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_1_20_5)) {
+            scale = wrapper.readFloat();
+        }
         return new ParticleDustColorTransitionData(scale, startRed, startGreen, startBlue, endRed, endGreen, endBlue);
     }
 
@@ -122,10 +144,40 @@ public class ParticleDustColorTransitionData extends ParticleData {
         wrapper.writeFloat(data.getStartRed());
         wrapper.writeFloat(data.getStartGreen());
         wrapper.writeFloat(data.getStartBlue());
-        wrapper.writeFloat(data.getScale());
+        if (wrapper.getServerVersion().isOlderThan(ServerVersion.V_1_20_5)) {
+            wrapper.writeFloat(data.getScale());
+        }
         wrapper.writeFloat(data.getEndRed());
         wrapper.writeFloat(data.getEndGreen());
         wrapper.writeFloat(data.getEndBlue());
+        if (wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_1_20_5)) {
+            wrapper.writeFloat(data.getScale());
+        }
+    }
+
+    public static ParticleDustColorTransitionData decode(NBTCompound compound, ClientVersion version) {
+        String fromColorKey = "from_color";
+        String toColorKey = "to_color";
+        if (version.isOlderThan(ClientVersion.V_1_20_5)) {
+            fromColorKey = "fromColor";
+            toColorKey = "toColor";
+        }
+        float[] fromColor = decodeColor(compound.getTagOrThrow(fromColorKey));
+        float[] toColor = decodeColor(compound.getTagOrThrow(toColorKey));
+        float scale = compound.getNumberTagOrThrow("scale").getAsFloat();
+        return new ParticleDustColorTransitionData(scale, fromColor, toColor);
+    }
+
+    public static void encode(ParticleDustColorTransitionData data, ClientVersion version, NBTCompound compound) {
+        String fromColorKey = "from_color";
+        String toColorKey = "to_color";
+        if (version.isOlderThan(ClientVersion.V_1_20_5)) {
+            fromColorKey = "fromColor";
+            toColorKey = "toColor";
+        }
+        compound.setTag(fromColorKey, encodeColor(null, data.startRed, data.startGreen, data.startBlue));
+        compound.setTag(toColorKey, encodeColor(null, data.endRed, data.endGreen, data.endBlue));
+        compound.setTag("scale", new NBTFloat(data.scale));
     }
 
     @Override

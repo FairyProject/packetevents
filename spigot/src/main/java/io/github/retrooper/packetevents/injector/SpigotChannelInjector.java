@@ -45,8 +45,6 @@ public class SpigotChannelInjector implements ChannelInjector {
     public final Set<Channel> injectedConnectionChannels = new HashSet<>();
     public List<Object> networkManagers;
     private int connectionChannelsListIndex = -1;
-    public boolean inboundAheadProtocolTranslation = false;
-    public boolean outboundAheadProtocolTranslation = false;
 
     public void updatePlayer(User user, Object player) {
         PacketEvents.getAPI().getEventManager().callEvent(new UserLoginEvent(user, player));
@@ -115,7 +113,7 @@ public class SpigotChannelInjector implements ChannelInjector {
                     try {
                         ServerConnectionInitializer.initChannel(channel, ConnectionState.PLAY);
                     } catch (Exception e) {
-                        System.out.println("Spigot injector failed to inject into an existing channel.");
+                        PacketEvents.getAPI().getLogManager().severe("Spigot injector failed to inject into an existing channel.");
                         e.printStackTrace();
                     }
                 }
@@ -226,5 +224,10 @@ public class SpigotChannelInjector implements ChannelInjector {
 
     private PacketEventsDecoder getDecoder(Channel channel) {
          return (PacketEventsDecoder) channel.pipeline().get(PacketEvents.DECODER_NAME);
+    }
+
+    @Override
+    public boolean isProxy() {
+        return false;
     }
 }

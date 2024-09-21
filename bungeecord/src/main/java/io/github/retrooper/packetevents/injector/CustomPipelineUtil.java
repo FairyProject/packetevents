@@ -42,7 +42,7 @@ public class CustomPipelineUtil {
         try {
             DECODE_METHOD = ByteToMessageDecoder.class
                     .getDeclaredMethod("decode", ChannelHandlerContext.class,
-                            ByteBuf.class, List.class);
+                            Object.class, List.class);
             DECODE_METHOD.setAccessible(true);
         } catch (NoSuchMethodException e) {
             e.printStackTrace();
@@ -130,12 +130,12 @@ public class CustomPipelineUtil {
         return output;
     }
 
-    public static void callPacketEncodeByteBuf(Object encoder, Object ctx, Object msg, Object output) throws InvocationTargetException {
+    public static void callPacketEncodeByteBuf(Object encoder, Object ctx, Object msg, List<Object> output) throws InvocationTargetException {
         if (BUNGEE_PACKET_ENCODE_BYTEBUF == null) {
             try {
                 BUNGEE_PACKET_ENCODE_BYTEBUF = encoder.getClass()
                         .getDeclaredMethod("encode", ChannelHandlerContext.class, ByteBuf.class,
-                                ByteBuf.class);
+                                List.class);
                 BUNGEE_PACKET_ENCODE_BYTEBUF.setAccessible(true);
             } catch (NoSuchMethodException e) {
                 e.printStackTrace();
@@ -153,7 +153,7 @@ public class CustomPipelineUtil {
         if (BUNGEE_PACKET_DECODE_BYTEBUF == null) {
             try {
                 BUNGEE_PACKET_DECODE_BYTEBUF = decoder.getClass().getDeclaredMethod("decode", ChannelHandlerContext.class,
-                        ByteBuf.class, List.class);
+                        Object.class, List.class);
                 BUNGEE_PACKET_DECODE_BYTEBUF.setAccessible(true);
             } catch (NoSuchMethodException e) {
                 e.printStackTrace();

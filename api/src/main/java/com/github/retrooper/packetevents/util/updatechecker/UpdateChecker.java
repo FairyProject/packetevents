@@ -59,65 +59,45 @@ public class UpdateChecker {
         PEVersion localVersion = PacketEvents.getAPI().getVersion();
         PEVersion newVersion;
         try {
-            newVersion = new PEVersion(checkLatestReleasedVersion());
+            newVersion = PEVersion.fromString(checkLatestReleasedVersion());
         } catch (Exception ex) {
-            ex.printStackTrace();
-            newVersion = null;
+            PacketEvents.getAPI().getLogManager().warn("Failed to check for updates. "
+                    + (ex.getCause() != null ? ex.getCause().getClass().getName() + ": " + ex.getCause().getMessage() : ex.getMessage()));
+            return UpdateCheckerStatus.FAILED;
         }
-        if (newVersion != null && localVersion.isOlderThan(newVersion)) {
-            PacketEvents.getAPI().getLogManager().warn("There is an update available for packetevents! Your build: ("
+
+        if (localVersion.isOlderThan(newVersion)) {
+            PacketEvents.getAPI().getLogManager().warn("There is an update available for PacketEvents! Your build: ("
                     + ColorUtil.toString(NamedTextColor.YELLOW) + localVersion
-                    + ColorUtil.toString(NamedTextColor.WHITE) + ") | Latest released build: ("
+                    + ColorUtil.toString(NamedTextColor.WHITE) + ") | Latest release: ("
                     + ColorUtil.toString(NamedTextColor.GREEN) + newVersion
-                    + ColorUtil.toString(NamedTextColor.RED) + ")");
+                    + ColorUtil.toString(NamedTextColor.WHITE) + ")");
             return UpdateCheckerStatus.OUTDATED;
-        } else if (newVersion != null && localVersion.isNewerThan(newVersion)) {
-            PacketEvents.getAPI().getLogManager().info("You are on a dev or pre released build of packetevents. Your build: ("
+        } else if (localVersion.isNewerThan(newVersion)) {
+            PacketEvents.getAPI().getLogManager().info("You are running a development build of PacketEvents. Your build: ("
                     + ColorUtil.toString(NamedTextColor.AQUA) + localVersion
-                    + ColorUtil.toString(NamedTextColor.WHITE) + ") | Latest released build: ("
+                    + ColorUtil.toString(NamedTextColor.WHITE) + ") | Latest release: ("
                     + ColorUtil.toString(NamedTextColor.DARK_AQUA) + newVersion
                     + ColorUtil.toString(NamedTextColor.WHITE) + ")");
             return UpdateCheckerStatus.PRE_RELEASE;
         } else if (localVersion.equals(newVersion)) {
-            PacketEvents.getAPI().getLogManager().info("You are on the latest released version of packetevents. ("
+            PacketEvents.getAPI().getLogManager().info("You are running the latest release of PacketEvents. Your build: ("
                     + ColorUtil.toString(NamedTextColor.GREEN) + newVersion + ColorUtil.toString(NamedTextColor.WHITE) + ")");
             return UpdateCheckerStatus.UP_TO_DATE;
         } else {
-            PacketEvents.getAPI().getLogManager().warn("Something went wrong while checking for an update. Your build: (" + localVersion + ")");
+            PacketEvents.getAPI().getLogManager().warn("Failed to check for updates. Your build: (" + localVersion + ")");
             return UpdateCheckerStatus.FAILED;
         }
     }
 
     public void handleUpdateCheck() {
         Thread thread = new Thread(() -> {
-            PacketEvents.getAPI().getLogManager().info("Checking for an update, please wait...");
+            PacketEvents.getAPI().getLogManager().info("Checking for updates, please wait...");
             UpdateChecker.UpdateCheckerStatus status = checkForUpdate();
-            int waitTimeInSeconds = 5;
-            int maxRetryCount = 5;
-            int retries = 0;
-            while (retries < maxRetryCount) {
-                if (status != UpdateChecker.UpdateCheckerStatus.FAILED) {
-                    break;
-                }
-                PacketEvents.getAPI().getLogManager().warn("[Checking for an update again in " + waitTimeInSeconds + " seconds...");
-                try {
-                    Thread.sleep(waitTimeInSeconds * 1000L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-
-                waitTimeInSeconds *= 2;
-
-                status = checkForUpdate();
-
-                if (retries == (maxRetryCount - 1)) {
-                    PacketEvents.getAPI().getLogManager().warn("packetevents failed to check for an update. No longer retrying.");
-                    break;
-                }
-
-                retries++;
-            }
-
+            //if (status == UpdateChecker.UpdateCheckerStatus.FAILED) {
+                //PacketEvents.getAPI().getLogManager().severe("Failed to check for updates!");
+                //A warning message is already printed when we fail to check for updates, no need to spam.
+            //}
         }, "packetevents-update-check-thread");
         thread.start();
     }
@@ -134,7 +114,7 @@ public class UpdateChecker {
          */
         OUTDATED,
         /**
-         * You are on a dev or pre-released build. Not on the latest stable release(not necessarily bad).
+         * You are on a development build. Not on the latest stable release(not necessarily bad).
          */
         PRE_RELEASE,
         /**

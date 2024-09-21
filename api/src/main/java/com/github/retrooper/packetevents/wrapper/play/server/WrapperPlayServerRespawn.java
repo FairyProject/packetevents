@@ -22,15 +22,28 @@ import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.player.GameMode;
-import com.github.retrooper.packetevents.protocol.world.*;
+import com.github.retrooper.packetevents.protocol.world.Difficulty;
+import com.github.retrooper.packetevents.protocol.world.Dimension;
+import com.github.retrooper.packetevents.protocol.world.WorldBlockPosition;
+import com.github.retrooper.packetevents.protocol.world.WorldType;
+import com.github.retrooper.packetevents.protocol.world.dimension.DimensionType;
+import com.github.retrooper.packetevents.protocol.world.dimension.DimensionTypeRef;
+import com.github.retrooper.packetevents.protocol.world.dimension.DimensionTypes;
 import com.github.retrooper.packetevents.resources.ResourceLocation;
+import com.github.retrooper.packetevents.util.mappings.IRegistry;
 import com.github.retrooper.packetevents.wrapper.PacketWrapper;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
 
 public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRespawn> {
-    private Dimension dimension;
+
+    public static final byte KEEP_NOTHING = 0;
+    public static final byte KEEP_ATTRIBUTES = 0b01;
+    public static final byte KEEP_ENTITY_DATA = 0b10;
+    public static final byte KEEP_ALL_DATA = KEEP_ATTRIBUTES | KEEP_ENTITY_DATA;
+
+    private DimensionTypeRef dimensionTypeRef;
     private Optional<String> worldName;
     private Difficulty difficulty;
     private long hashedSeed;
@@ -38,7 +51,7 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
     private @Nullable GameMode previousGameMode;
     private boolean worldDebug;
     private boolean worldFlat;
-    private boolean keepingAllPlayerData;
+    private byte keptData;
     private WorldBlockPosition lastDeathPosition;
     private Integer portalCooldown;
 
@@ -49,12 +62,65 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
         super(event);
     }
 
-    public WrapperPlayServerRespawn(Dimension dimension, @Nullable String worldName, Difficulty difficulty, long hashedSeed, GameMode gameMode,
-                                    @Nullable GameMode previousGameMode, boolean worldDebug, boolean worldFlat, boolean keepingAllPlayerData,
-                                    @Nullable ResourceLocation deathDimensionName, @Nullable WorldBlockPosition lastDeathPosition,
-                                    @Nullable Integer portalCooldown) {
+    @Deprecated
+    public WrapperPlayServerRespawn(
+            Dimension dimension, @Nullable String worldName, Difficulty difficulty, long hashedSeed, GameMode gameMode,
+            @Nullable GameMode previousGameMode, boolean worldDebug, boolean worldFlat, boolean keepingAllPlayerData,
+            @Nullable ResourceLocation deathDimensionName, @Nullable WorldBlockPosition lastDeathPosition,
+            @Nullable Integer portalCooldown
+    ) {
+        this(dimension.asDimensionTypeRef(), worldName, difficulty, hashedSeed, gameMode, previousGameMode,
+                worldDebug, worldFlat, keepingAllPlayerData, deathDimensionName, lastDeathPosition, portalCooldown);
+    }
+
+    @Deprecated
+    public WrapperPlayServerRespawn(
+            Dimension dimension, @Nullable String worldName, Difficulty difficulty, long hashedSeed, GameMode gameMode,
+            @Nullable GameMode previousGameMode, boolean worldDebug, boolean worldFlat, byte keptData,
+            @Nullable WorldBlockPosition lastDeathPosition, @Nullable Integer portalCooldown
+    ) {
+        this(dimension.asDimensionTypeRef(), worldName, difficulty, hashedSeed, gameMode, previousGameMode,
+                worldDebug, worldFlat, keptData, lastDeathPosition, portalCooldown);
+    }
+
+    public WrapperPlayServerRespawn(
+            DimensionType dimensionType, @Nullable String worldName, Difficulty difficulty, long hashedSeed, GameMode gameMode,
+            @Nullable GameMode previousGameMode, boolean worldDebug, boolean worldFlat, boolean keepingAllPlayerData,
+            @Nullable ResourceLocation deathDimensionName, @Nullable WorldBlockPosition lastDeathPosition,
+            @Nullable Integer portalCooldown
+    ) {
+        this((DimensionTypeRef) null, worldName, difficulty, hashedSeed, gameMode, previousGameMode, worldDebug, worldFlat,
+                keepingAllPlayerData, deathDimensionName, lastDeathPosition, portalCooldown);
+        this.dimensionTypeRef = dimensionType.asRef(this.serverVersion.toClientVersion());
+    }
+
+    public WrapperPlayServerRespawn(
+            DimensionType dimensionType, @Nullable String worldName, Difficulty difficulty, long hashedSeed, GameMode gameMode,
+            @Nullable GameMode previousGameMode, boolean worldDebug, boolean worldFlat, byte keptData,
+            @Nullable WorldBlockPosition lastDeathPosition, @Nullable Integer portalCooldown
+    ) {
+        this((DimensionTypeRef) null, worldName, difficulty, hashedSeed, gameMode, previousGameMode,
+                worldDebug, worldFlat, keptData, lastDeathPosition, portalCooldown);
+        this.dimensionTypeRef = dimensionType.asRef(this.serverVersion.toClientVersion());
+    }
+
+    public WrapperPlayServerRespawn(
+            DimensionTypeRef dimensionTypeRef, @Nullable String worldName, Difficulty difficulty, long hashedSeed, GameMode gameMode,
+            @Nullable GameMode previousGameMode, boolean worldDebug, boolean worldFlat, boolean keepingAllPlayerData,
+            @Nullable ResourceLocation deathDimensionName, @Nullable WorldBlockPosition lastDeathPosition,
+            @Nullable Integer portalCooldown
+    ) {
+        this(dimensionTypeRef, worldName, difficulty, hashedSeed, gameMode, previousGameMode, worldDebug, worldFlat,
+                keepingAllPlayerData ? KEEP_ALL_DATA : KEEP_NOTHING, lastDeathPosition, portalCooldown);
+    }
+
+    public WrapperPlayServerRespawn(
+            DimensionTypeRef dimensionTypeRef, @Nullable String worldName, Difficulty difficulty, long hashedSeed, GameMode gameMode,
+            @Nullable GameMode previousGameMode, boolean worldDebug, boolean worldFlat, byte keptData,
+            @Nullable WorldBlockPosition lastDeathPosition, @Nullable Integer portalCooldown
+    ) {
         super(PacketType.Play.Server.RESPAWN);
-        this.dimension = dimension;
+        this.dimensionTypeRef = dimensionTypeRef;
         setWorldName(worldName);
         this.difficulty = difficulty;
         this.hashedSeed = hashedSeed;
@@ -62,7 +128,7 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
         this.previousGameMode = previousGameMode;
         this.worldDebug = worldDebug;
         this.worldFlat = worldFlat;
-        this.keepingAllPlayerData = keepingAllPlayerData;
+        this.keptData = keptData;
         this.lastDeathPosition = lastDeathPosition;
         this.portalCooldown = portalCooldown;
     }
@@ -73,26 +139,38 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
         boolean v1_15_0 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_15);
         boolean v1_16_0 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16);
         boolean v1_19 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19);
+        boolean v1_19_3 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19_3);
+        boolean v1_20_2 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20_2);
 
+        this.dimensionTypeRef = DimensionTypeRef.read(this);
         if (v1_16_0) {
-            dimension = readDimension();
             worldName = Optional.of(readString());
             hashedSeed = readLong();
-            gameMode = GameMode.getById(readUnsignedByte());
-            int previousMode = readByte();
-            previousGameMode = previousMode == -1 ? null : GameMode.getById(previousMode);
+            if (v1_20_2) {
+                gameMode = readGameMode();
+            } else {
+                gameMode = GameMode.getById(readUnsignedByte());
+            }
+            previousGameMode = readGameMode();
             worldDebug = readBoolean();
             worldFlat = readBoolean();
-            keepingAllPlayerData = readBoolean();
+            if (v1_19_3) {
+                if (!v1_20_2) {
+                    keptData = readByte();
+                }
+            } else {
+                keptData = readBoolean() ? KEEP_ALL_DATA : KEEP_ENTITY_DATA;
+            }
             if (v1_19) {
                 lastDeathPosition = readOptional(PacketWrapper::readWorldBlockPosition);
             }
             if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20)) {
                 portalCooldown = readVarInt();
             }
+            if (v1_20_2) {
+                keptData = readByte();
+            }
         } else {
-            dimension = new Dimension(readInt());
-
             worldName = Optional.empty();
             hashedSeed = 0L;
             if (v1_15_0) {
@@ -104,8 +182,8 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
             //Note: SPECTATOR will not be expected from a 1.7 client.
             gameMode = GameMode.getById(readByte());
             levelType = readString(16);
-            worldFlat = DimensionType.isFlat(levelType);
-            worldDebug = DimensionType.isDebug(levelType);
+            worldFlat = com.github.retrooper.packetevents.protocol.world.DimensionType.isFlat(levelType);
+            worldDebug = com.github.retrooper.packetevents.protocol.world.DimensionType.isDebug(levelType);
         }
     }
 
@@ -115,16 +193,24 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
         boolean v1_15_0 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_15);
         boolean v1_16_0 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16);
         boolean v1_19 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19);
+        boolean v1_19_3 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19_3);
+        boolean v1_20_2 = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20_2);
 
+        DimensionTypeRef.write(this, this.dimensionTypeRef);
         if (v1_16_0) {
-            writeDimension(dimension);
             writeString(worldName.orElse(""));
             writeLong(hashedSeed);
-            writeByte(gameMode.ordinal());
-            writeByte(previousGameMode == null ? -1 : previousGameMode.ordinal());
+            writeGameMode(gameMode);
+            writeGameMode(previousGameMode);
             writeBoolean(worldDebug);
             writeBoolean(worldFlat);
-            writeBoolean(keepingAllPlayerData);
+            if (v1_19_3) {
+                if (!v1_20_2) {
+                    writeByte(keptData);
+                }
+            } else {
+                writeBoolean((keptData & KEEP_ATTRIBUTES) != 0);
+            }
             if (v1_19) {
                 writeOptional(lastDeathPosition, PacketWrapper::writeWorldBlockPosition);
             }
@@ -132,8 +218,10 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
                 int pCooldown = portalCooldown != null ? portalCooldown : 0;
                 writeVarInt(pCooldown);
             }
+            if (v1_20_2) {
+                writeByte(keptData);
+            }
         } else {
-            writeInt(dimension.getId());
             if (v1_15_0) {
                 writeLong(hashedSeed);
             } else if (!v1_14) {
@@ -157,7 +245,7 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
 
     @Override
     public void copy(WrapperPlayServerRespawn wrapper) {
-        dimension = wrapper.dimension;
+        dimensionTypeRef = wrapper.dimensionTypeRef;
         worldName = wrapper.worldName;
         difficulty = wrapper.difficulty;
         hashedSeed = wrapper.hashedSeed;
@@ -165,16 +253,35 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
         previousGameMode = wrapper.previousGameMode;
         worldDebug = wrapper.worldDebug;
         worldFlat = wrapper.worldFlat;
-        keepingAllPlayerData = wrapper.keepingAllPlayerData;
+        keptData = wrapper.keptData;
         lastDeathPosition = wrapper.lastDeathPosition;
     }
 
-    public Dimension getDimension() {
-        return dimension;
+    public DimensionTypeRef getDimensionTypeRef() {
+        return this.dimensionTypeRef;
     }
 
+    public void setDimensionTypeRef(DimensionTypeRef dimensionTypeRef) {
+        this.dimensionTypeRef = dimensionTypeRef;
+    }
+
+    public DimensionType getDimensionType() {
+        IRegistry<DimensionType> registry = this.getRegistryHolder().getRegistryOr(DimensionTypes.getRegistry());
+        return this.dimensionTypeRef.resolve(registry, this.serverVersion.toClientVersion());
+    }
+
+    public void setDimensionType(DimensionType dimensionType) {
+        this.dimensionTypeRef = dimensionType.asRef(this.serverVersion.toClientVersion());
+    }
+
+    @Deprecated
+    public Dimension getDimension() {
+        return Dimension.fromDimensionTypeRef(this.dimensionTypeRef);
+    }
+
+    @Deprecated
     public void setDimension(Dimension dimension) {
-        this.dimension = dimension;
+        this.dimensionTypeRef = dimension.asDimensionTypeRef();
     }
 
     public Optional<String> getWorldName() {
@@ -235,11 +342,19 @@ public class WrapperPlayServerRespawn extends PacketWrapper<WrapperPlayServerRes
     }
 
     public boolean isKeepingAllPlayerData() {
-        return keepingAllPlayerData;
+        return (keptData & KEEP_ATTRIBUTES) != 0;
     }
 
     public void setKeepingAllPlayerData(boolean keepAllPlayerData) {
-        this.keepingAllPlayerData = keepAllPlayerData;
+        this.keptData = keepAllPlayerData ? KEEP_ALL_DATA : KEEP_ENTITY_DATA;
+    }
+
+    public byte getKeptData() {
+        return keptData;
+    }
+
+    public void setKeptData(byte keptData) {
+        this.keptData = keptData;
     }
 
     public @Nullable WorldBlockPosition getLastDeathPosition() {

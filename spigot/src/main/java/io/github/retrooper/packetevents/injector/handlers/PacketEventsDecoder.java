@@ -18,17 +18,23 @@
 
 package io.github.retrooper.packetevents.injector.handlers;
 
+import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.exception.PacketProcessException;
+import com.github.retrooper.packetevents.netty.buffer.ByteBufHelper;
 import com.github.retrooper.packetevents.protocol.ConnectionState;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.util.ExceptionUtil;
 import com.github.retrooper.packetevents.util.PacketEventsImplHelper;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerDisconnect;
 import io.github.retrooper.packetevents.injector.connection.ServerConnectionInitializer;
+import io.github.retrooper.packetevents.util.folia.FoliaScheduler;
 import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageDecoder;
+import net.kyori.adventure.text.Component;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 
 import java.util.List;
 
@@ -48,8 +54,8 @@ public class PacketEventsDecoder extends MessageToMessageDecoder<ByteBuf> {
     }
 
     public void read(ChannelHandlerContext ctx, ByteBuf input, List<Object> out) throws Exception {
-        PacketEventsImplHelper.handleServerBoundPacket(ctx.channel(), user, player, input, true);
-        out.add(input.retain());
+        Object buffer = PacketEventsImplHelper.handleServerBoundPacket(ctx.channel(), user, player, input, true);
+        out.add(ByteBufHelper.retain(buffer));
     }
 
     @Override
@@ -64,10 +70,34 @@ public class PacketEventsDecoder extends MessageToMessageDecoder<ByteBuf> {
         super.exceptionCaught(ctx, cause);
         //Check if the minecraft server will already print our exception for us.
         //Don't print errors during handshake
-        if (ExceptionUtil.isException(cause, PacketProcessException.class)
-                && !SpigotReflectionUtil.isMinecraftServerInstanceDebugging()
-                && (user != null && user.getConnectionState() != ConnectionState.HANDSHAKING)) {
-            cause.printStackTrace();
+        boolean didWeCauseThis = ExceptionUtil.isException(cause, PacketProcessException.class);
+        if (didWeCauseThis
+                && (user == null || user.getDecoderState() != ConnectionState.HANDSHAKING)) {
+            if (!SpigotReflectionUtil.isMinecraftServerInstanceDebugging()) {
+                if (PacketEvents.getAPI().getSettings().isFullStackTraceEnabled()) {
+                    cause.printStackTrace();
+                } else {
+                    PacketEvents.getAPI().getLogManager().warn(cause.getMessage());
+                }
+            }
+
+            if (PacketEvents.getAPI().getSettings().isKickOnPacketExceptionEnabled()) {
+                try {
+                    if (user != null) {
+                        user.sendPacket(new WrapperPlayServerDisconnect(Component.text("Invalid packet")));
+                    }
+                } catch (Exception ignored) { // There may (?) be an exception if the player is in the wrong state...
+                    // Do nothing.
+                }
+                ctx.channel().close();
+                if (player != null) {
+                    FoliaScheduler.getEntityScheduler().runDelayed(player, (Plugin) PacketEvents.getAPI().getPlugin(), (o) -> player.kickPlayer("Invalid packet"), null, 1);
+                }
+
+                if (user != null) {
+                    PacketEvents.getAPI().getLogManager().warn("Disconnected " + user.getProfile().getName() + " due to invalid packet!");
+                }
+            }
         }
     }
 

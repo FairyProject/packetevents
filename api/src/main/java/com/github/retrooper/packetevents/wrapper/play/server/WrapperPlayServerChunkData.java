@@ -25,7 +25,9 @@ import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.stream.NetStreamInput;
 import com.github.retrooper.packetevents.protocol.stream.NetStreamOutput;
 import com.github.retrooper.packetevents.protocol.world.chunk.BaseChunk;
+import com.github.retrooper.packetevents.protocol.world.chunk.ChunkBitMask;
 import com.github.retrooper.packetevents.protocol.world.chunk.Column;
+import com.github.retrooper.packetevents.protocol.world.chunk.LightData;
 import com.github.retrooper.packetevents.protocol.world.chunk.NetworkChunkData;
 import com.github.retrooper.packetevents.protocol.world.chunk.TileEntity;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_16.Chunk_v1_9;
@@ -33,7 +35,12 @@ import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_7.Chunk_v1
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_8.Chunk_v1_8;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v_1_18.Chunk_v1_18;
 import com.github.retrooper.packetevents.protocol.world.chunk.reader.ChunkReader;
-import com.github.retrooper.packetevents.protocol.world.chunk.reader.impl.*;
+import com.github.retrooper.packetevents.protocol.world.chunk.reader.impl.ChunkReader_v1_16;
+import com.github.retrooper.packetevents.protocol.world.chunk.reader.impl.ChunkReader_v1_18;
+import com.github.retrooper.packetevents.protocol.world.chunk.reader.impl.ChunkReader_v1_7;
+import com.github.retrooper.packetevents.protocol.world.chunk.reader.impl.ChunkReader_v1_8;
+import com.github.retrooper.packetevents.protocol.world.chunk.reader.impl.ChunkReader_v1_9;
+import com.github.retrooper.packetevents.protocol.world.dimension.DimensionTypes;
 import com.github.retrooper.packetevents.wrapper.PacketWrapper;
 
 import java.io.ByteArrayInputStream;
@@ -52,59 +59,27 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
     private static ChunkReader_v1_18 chunkReader_v1_18 = new ChunkReader_v1_18();
 
     private Column column;
-
-    //TODO Make accessible??
-    private boolean ignoreOldData;
-
     // 1.18 only (lighting) - for writing data
-    // TODO: Make accessible?? Include in chunk data?? What do we do with this?
-    private boolean trustEdges;
-    private BitSet blockLightMask = new BitSet();
-    private BitSet skyLightMask = new BitSet();
-    private BitSet emptyBlockLightMask = new BitSet();
-    private BitSet emptySkyLightMask = new BitSet();
-    private int skyLightCount;
-    private  int blockLightCount;
-    private byte[][] skyLightArray = new byte[0][0];
-    private byte[][] blockLightArray = new byte[0][0];
+    private LightData lightData;
+    private boolean ignoreOldData;
 
     public WrapperPlayServerChunkData(PacketSendEvent event) {
         super(event);
     }
 
     public WrapperPlayServerChunkData(Column column) {
+        this(column, null, false);
+    }
+
+    public WrapperPlayServerChunkData(Column column, LightData lightData) {
+        this(column, lightData, false);
+    }
+
+    public WrapperPlayServerChunkData(Column column, LightData lightData, boolean ignoreOldData) {
         super(PacketType.Play.Server.CHUNK_DATA);
         this.column = column;
-    }
-
-    private long[] readBitSetLongs() {
-        if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_17)) {
-            //Read primary bit mask
-            return readLongArray();
-        } else if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_9)) {
-            //Read primary bit mask
-            return new long[]{readVarInt()};
-        } else {
-            //Read primary bit mask
-            return new long[]{readUnsignedShort()};
-        }
-    }
-
-    private BitSet readChunkMask() {
-        return BitSet.valueOf(readBitSetLongs());
-    }
-
-    private void writeChunkMask(BitSet chunkMask) {
-        if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_17)) {
-            //Write primary bit mask
-            long[] longArray = chunkMask.toLongArray();
-            writeLongArray(longArray);
-        } else if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_9)) {
-            //Write primary bit mask
-            writeVarInt((int) chunkMask.toLongArray()[0]);
-        } else {
-            writeShort((int) chunkMask.toLongArray()[0]);
-        }
+        this.lightData = lightData;
+        this.ignoreOldData = ignoreOldData;
     }
 
     @Override
@@ -122,7 +97,7 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
         }
 
         // There is no bitset on 1.18 and above, instead the SingletonPalette is used to represent a chunk with all air
-        BitSet chunkMask = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_18) ? null : readChunkMask();
+        BitSet chunkMask = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_18) ? null : ChunkBitMask.readChunkMask(this);
         boolean hasHeightMaps = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_14);
         NBTCompound heightMaps = null;
         if (hasHeightMaps) {
@@ -132,7 +107,7 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
         // 1.7 sends a secondary bit mask for the block metadata
         BitSet secondaryChunkMask = null;
         if (serverVersion.isOlderThanOrEquals(ServerVersion.V_1_7_10)) {
-            secondaryChunkMask = readChunkMask();
+            secondaryChunkMask = ChunkBitMask.readChunkMask(this);
         }
 
         int chunkSize = 16;
@@ -175,11 +150,14 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
 
         boolean hasBlocklight = (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16) || serverVersion.isOlderThan(ServerVersion.V_1_14))
                 && !serverVersion.isOlderThanOrEquals(ServerVersion.V_1_8_8);
-        boolean checkForSky = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16) || serverVersion.isOlderThanOrEquals(ServerVersion.V_1_8_8) || user.getDimension().getId() == 0;
+        boolean checkForSky = this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_16)
+                || this.serverVersion.isOlderThanOrEquals(ServerVersion.V_1_8_8)
+                || this.user != null && this.user.getDimensionType().equals(DimensionTypes.OVERWORLD)
+                && this.serverVersion.isOlderThan(ServerVersion.V_1_14);
 
         // 1.7/1.8 don't use this NetStreamInput
         NetStreamInput dataIn = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_9) ? new NetStreamInput(new ByteArrayInputStream(data)) : null;
-        BaseChunk[] chunks = getChunkReader().read(user.getDimension(), chunkMask, secondaryChunkMask, fullChunk, hasBlocklight, checkForSky, chunkSize, data, dataIn);
+        BaseChunk[] chunks = getChunkReader().read(this.user.getDimensionType(), chunkMask, secondaryChunkMask, fullChunk, hasBlocklight, checkForSky, chunkSize, data, dataIn);
 
         if (hasBiomeData && serverVersion.isOlderThan(ServerVersion.V_1_15)) {
             if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_13)) { // Uses ints
@@ -192,6 +170,9 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
                 for (int i = 0; i < biomeDataBytes.length; i++) {
                     biomeDataBytes[i] = dataIn.readByte();
                 }
+            } else if (data.length == 0) {
+                // if cache-chunk-maps is enabled in paper, paper doesn't send any biome data on chunk unload
+                biomeDataBytes = data; // empty array
             } else {
                 biomeDataBytes = Arrays.copyOfRange(data, data.length - 256, data.length);
             }
@@ -214,26 +195,7 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
         }
 
         if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_18)) {
-            if (serverVersion.isOlderThanOrEquals(ServerVersion.V_1_19_4)) {
-                trustEdges = readBoolean();
-            }
-
-            skyLightMask = readChunkMask();
-            blockLightMask = readChunkMask();
-            emptySkyLightMask = readChunkMask();
-            emptyBlockLightMask = readChunkMask();
-
-            skyLightCount = readVarInt();
-            this.skyLightArray = new byte[skyLightCount][];
-            for (int x = 0; x < skyLightCount; x++) {
-                skyLightArray[x] = readByteArray();
-            }
-
-            blockLightCount = readVarInt();
-            this.blockLightArray = new byte[blockLightCount][];
-            for (int x = 0; x < blockLightCount; x++) {
-                blockLightArray[x] = readByteArray();
-            }
+            this.lightData = LightData.read(this);
         }
 
         if (hasBiomeData) {
@@ -376,7 +338,7 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
         }
 
         if (!v1_18) {
-            writeChunkMask(chunkMask);
+            ChunkBitMask.writeChunkMask(this, chunkMask);
         }
 
         boolean hasHeightMaps = serverVersion.isNewerThanOrEquals(ServerVersion.V_1_14);
@@ -436,39 +398,15 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
         }
 
         if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_18)) {
-            if (serverVersion.isOlderThanOrEquals(ServerVersion.V_1_19_4)) {
-                writeBoolean(trustEdges);
-            }
-            writeChunkMask(skyLightMask);
-            writeChunkMask(blockLightMask);
-            writeChunkMask(emptySkyLightMask);
-            writeChunkMask(emptyBlockLightMask);
-
-            writeVarInt(skyLightCount);
-            for (int x = 0; x < skyLightCount; x++) {
-                writeByteArray(skyLightArray[x]);
-            }
-
-            writeVarInt(blockLightCount);
-            for (int x = 0; x < blockLightCount; x++) {
-                writeByteArray(blockLightArray[x]);
-            }
+            LightData.write(this, lightData);
         }
     }
 
     @Override
     public void copy(WrapperPlayServerChunkData wrapper) {
         this.column = wrapper.column;
+        this.lightData = wrapper.lightData.clone();
         this.ignoreOldData = wrapper.ignoreOldData;
-        this.trustEdges = wrapper.trustEdges;
-        this.blockLightMask = wrapper.blockLightMask;
-        this.skyLightMask = wrapper.skyLightMask;
-        this.emptyBlockLightMask = wrapper.emptyBlockLightMask;
-        this.emptySkyLightMask = wrapper.emptySkyLightMask;
-        this.skyLightCount = wrapper.skyLightCount;
-        this.blockLightCount = wrapper.blockLightCount;
-        this.skyLightArray = wrapper.skyLightArray;
-        this.blockLightArray = wrapper.blockLightArray;
     }
 
     public Column getColumn() {
@@ -477,6 +415,22 @@ public class WrapperPlayServerChunkData extends PacketWrapper<WrapperPlayServerC
 
     public void setColumn(Column column) {
         this.column = column;
+    }
+
+    public LightData getLightData() {
+        return lightData;
+    }
+
+    public void setLightData(LightData lightData) {
+        this.lightData = lightData;
+    }
+
+    public boolean isIgnoreOldData() {
+        return ignoreOldData;
+    }
+
+    public void setIgnoreOldData(boolean ignoreOldData) {
+        this.ignoreOldData = ignoreOldData;
     }
 
     private ChunkReader getChunkReader() {

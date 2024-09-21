@@ -20,25 +20,26 @@ package com.github.retrooper.packetevents.protocol.entity.data;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.entity.armadillo.ArmadilloState;
 import com.github.retrooper.packetevents.protocol.entity.pose.EntityPose;
 import com.github.retrooper.packetevents.protocol.entity.sniffer.SnifferState;
 import com.github.retrooper.packetevents.protocol.entity.villager.VillagerData;
 import com.github.retrooper.packetevents.protocol.item.ItemStack;
 import com.github.retrooper.packetevents.protocol.nbt.NBTCompound;
 import com.github.retrooper.packetevents.protocol.particle.Particle;
-import com.github.retrooper.packetevents.protocol.particle.type.ParticleType;
-import com.github.retrooper.packetevents.protocol.particle.type.ParticleTypes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.BlockFace;
 import com.github.retrooper.packetevents.protocol.world.WorldBlockPosition;
 import com.github.retrooper.packetevents.resources.ResourceLocation;
-import com.github.retrooper.packetevents.util.*;
+import com.github.retrooper.packetevents.util.Quaternion4f;
+import com.github.retrooper.packetevents.util.Vector3f;
+import com.github.retrooper.packetevents.util.Vector3i;
+import com.github.retrooper.packetevents.util.mappings.TypesBuilder;
+import com.github.retrooper.packetevents.util.mappings.TypesBuilderData;
 import com.github.retrooper.packetevents.wrapper.PacketWrapper;
+import net.kyori.adventure.text.Component;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -50,15 +51,7 @@ public class EntityDataTypes {
 
     private static final Map<String, EntityDataType<?>> ENTITY_DATA_TYPE_MAP = new HashMap<>();
     private static final Map<Byte, Map<Integer, EntityDataType<?>>> ENTITY_DATA_TYPE_ID_MAP = new HashMap<>();
-    protected static final TypesBuilder TYPES_BUILDER = new TypesBuilder("entity/entity_data_type_mappings",
-            ClientVersion.V_1_8,
-            ClientVersion.V_1_9,
-            ClientVersion.V_1_11,
-            ClientVersion.V_1_13,
-            ClientVersion.V_1_14,
-            ClientVersion.V_1_19,
-            ClientVersion.V_1_19_3,
-            ClientVersion.V_1_19_4);
+    protected static final TypesBuilder TYPES_BUILDER = new TypesBuilder("entity/entity_data_type_mappings");
 
     public static final EntityDataType<Byte> BYTE = define("byte", PacketWrapper::readByte, PacketWrapper::writeByte);
 
@@ -84,9 +77,13 @@ public class EntityDataTypes {
 
     public static final EntityDataType<String> STRING = define("string", PacketWrapper::readString, PacketWrapper::writeString);
 
+    @Deprecated
     public static final EntityDataType<String> COMPONENT = define("component", PacketWrapper::readComponentJSON, PacketWrapper::writeComponentJSON);
+    public static final EntityDataType<Component> ADV_COMPONENT = define("component", PacketWrapper::readComponent, PacketWrapper::writeComponent);
 
-    public static final EntityDataType<Optional<String>> OPTIONAL_COMPONENT = define("optional_component", readOptionalComponentDeserializer(), writeOptionalComponentSerializer());
+    @Deprecated
+    public static final EntityDataType<Optional<String>> OPTIONAL_COMPONENT = define("optional_component", readOptionalComponentJSONDeserializer(), writeOptionalComponentJSONSerializer());
+    public static final EntityDataType<Optional<Component>> OPTIONAL_ADV_COMPONENT = define("optional_component", readOptionalComponentDeserializer(), writeOptionalComponentSerializer());
 
     public static final EntityDataType<ItemStack> ITEMSTACK = define("itemstack", PacketWrapper::readItemStack, PacketWrapper::writeItemStack);
 
@@ -144,14 +141,7 @@ public class EntityDataTypes {
 
     public static final EntityDataType<NBTCompound> NBT = define("nbt", PacketWrapper::readNBT, PacketWrapper::writeNBT);
 
-    public static final EntityDataType<Particle> PARTICLE = define("particle", wrapper -> {
-        int id = wrapper.readVarInt();
-        ParticleType type = ParticleTypes.getById(PacketEvents.getAPI().getServerManager().getVersion().toClientVersion(), id);
-        return new Particle(type, type.readDataFunction().apply(wrapper));
-    }, (wrapper, particle) -> {
-        wrapper.writeVarInt(particle.getType().getId(PacketEvents.getAPI().getServerManager().getVersion().toClientVersion()));
-        particle.getType().writeDataFunction().accept(wrapper, particle.getData());
-    });
+    public static final EntityDataType<Particle<?>> PARTICLE = define("particle", Particle::read, Particle::write);
 
     public static final EntityDataType<VillagerData> VILLAGER_DATA = define("villager_data", PacketWrapper::readVillagerData, PacketWrapper::writeVillagerData);
 
@@ -185,7 +175,6 @@ public class EntityDataTypes {
         return SnifferState.values()[id];
     }, (PacketWrapper<?> wrapper, SnifferState value) -> wrapper.writeVarInt(value.ordinal()));
 
-
     public static final EntityDataType<Vector3f> VECTOR3F = define("vector3f",
             (PacketWrapper<?> wrapper) -> new Vector3f(wrapper.readFloat(), wrapper.readFloat(), wrapper.readFloat()),
             (PacketWrapper<?> wrapper, Vector3f value) -> {
@@ -202,6 +191,28 @@ public class EntityDataTypes {
                 wrapper.writeFloat(value.getZ());
                 wrapper.writeFloat(value.getW());
             });
+
+    // Added in 1.20.5
+    public static final EntityDataType<ArmadilloState> ARMADILLO_STATE = define("armadillo_state",
+            (PacketWrapper<?> wrapper) -> ArmadilloState.values()[wrapper.readVarInt()],
+            (PacketWrapper<?> wrapper, ArmadilloState value) -> wrapper.writeVarInt(value.ordinal())
+    );
+
+    public static final EntityDataType<List<Particle<?>>> PARTICLES = define("particles",
+            wrapper -> wrapper.readList(Particle::read),
+            (wrapper, particles) -> wrapper.writeList(particles, Particle::write)
+    );
+
+    public static final EntityDataType<Integer> WOLF_VARIANT =
+            define("wolf_variant_type", readIntDeserializer(), writeIntSerializer());
+
+    /**
+     * Returns an immutable view of the entity-data types.
+     * @return Entity-Data Types
+     */
+    public static Collection<EntityDataType<?>> values() {
+        return Collections.unmodifiableCollection(ENTITY_DATA_TYPE_MAP.values());
+    }
 
     public static EntityDataType<?> getById(ClientVersion version, int id) {
         int index = TYPES_BUILDER.getDataIndex(version);
@@ -256,26 +267,44 @@ public class EntityDataTypes {
         };
     }
 
-    private static <T> Function<PacketWrapper<?>, T> readOptionalComponentDeserializer() {
+    @Deprecated
+    private static Function<PacketWrapper<?>, Optional<String>> readOptionalComponentJSONDeserializer() {
         return (PacketWrapper<?> wrapper) -> {
             if (wrapper.readBoolean()) {
-                return (T) Optional.of(wrapper.readString());
+                return Optional.of(wrapper.readComponentJSON());
             } else {
-                return (T) Optional.empty();
+                return Optional.empty();
             }
         };
     }
 
-    private static <T> BiConsumer<PacketWrapper<?>, T> writeOptionalComponentSerializer() {
-        return (PacketWrapper<?> wrapper, T value) -> {
-            if (value instanceof Optional) {
-                Optional<String> optional = (Optional<String>) value;
-                if (optional.isPresent()) {
-                    wrapper.writeBoolean(true);
-                    wrapper.writeString(optional.get());
-                } else {
-                    wrapper.writeBoolean(false);
-                }
+    @Deprecated
+    private static BiConsumer<PacketWrapper<?>, Optional<String>> writeOptionalComponentJSONSerializer() {
+        return (PacketWrapper<?> wrapper, Optional<String> value) -> {
+            if (value != null && value.isPresent()) {
+                wrapper.writeBoolean(true);
+                wrapper.writeComponentJSON(value.get());
+            } else {
+                wrapper.writeBoolean(false);
+            }
+        };
+    }
+
+    private static Function<PacketWrapper<?>, Optional<Component>> readOptionalComponentDeserializer() {
+        return (PacketWrapper<?> wrapper) -> {
+            if (wrapper.readBoolean()) {
+                return Optional.of(wrapper.readComponent());
+            } else {
+                return Optional.empty();
+            }
+        };
+    }
+
+    private static BiConsumer<PacketWrapper<?>, Optional<Component>> writeOptionalComponentSerializer() {
+        return (PacketWrapper<?> wrapper, Optional<Component> value) -> {
+            if (value != null && value.isPresent()) {
+                wrapper.writeBoolean(true);
+                wrapper.writeComponent(value.get());
             } else {
                 wrapper.writeBoolean(false);
             }
@@ -338,6 +367,10 @@ public class EntityDataTypes {
                 }
             };
         }
+    }
+
+    static {
+        TYPES_BUILDER.unloadFileMappings();
     }
 
 }

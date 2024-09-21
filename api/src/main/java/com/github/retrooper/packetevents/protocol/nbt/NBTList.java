@@ -27,14 +27,21 @@ import java.util.Objects;
 public class NBTList<T extends NBT> extends NBT {
 
     protected final NBTType<T> type;
-    protected final List<T> tags = new ArrayList<>();
+    protected final List<T> tags;
 
     public NBTList(NBTType<T> type) {
         this.type = type;
+        this.tags = new ArrayList<>();
+    }
+
+    public NBTList(NBTType<T> type, int size) {
+        this.type = type;
+        this.tags = new ArrayList<>(size);
     }
 
     public NBTList(NBTType<T> type, List<T> tags) {
         this.type = type;
+        this.tags = new ArrayList<>();
         this.tags.addAll(tags);
     }
 
@@ -87,8 +94,16 @@ public class NBTList<T extends NBT> extends NBT {
         tags.add(tag);
     }
 
+    public void addTagUnsafe(int index, NBT nbt) {
+        addTag(index, (T) nbt);
+    }
+
     public void addTagUnsafe(NBT nbt) {
-        addTag((T)nbt);
+        addTag((T) nbt);
+    }
+
+    public void removeTag(int index) {
+        tags.remove(index);
     }
 
     protected void validateAddTag(T tag) {
@@ -125,5 +140,10 @@ public class NBTList<T extends NBT> extends NBT {
             newTags.add((T) tag.copy());
         }
         return new NBTList<>(type, newTags);
+    }
+
+    @Override
+    public String toString() {
+        return "List(" + tags + ")";
     }
 }

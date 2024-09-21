@@ -39,11 +39,11 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-public abstract class ProtocolPacketEvent<T> extends PacketEvent implements PlayerEvent<T>, CancellableEvent, UserEvent {
+public abstract class ProtocolPacketEvent extends PacketEvent implements PlayerEvent, CancellableEvent, UserEvent {
     private final Object channel;
     private final ConnectionState connectionState;
     private final User user;
-    private final T player;
+    private final Object player;
     private Object byteBuf;
     private final int packetID;
     private final PacketTypeCommon packetType;
@@ -55,7 +55,7 @@ public abstract class ProtocolPacketEvent<T> extends PacketEvent implements Play
     private boolean needsReEncode = PacketEvents.getAPI().getSettings().reEncodeByDefault();
 
     public ProtocolPacketEvent(PacketSide packetSide, Object channel,
-                               User user, T player, Object byteBuf,
+                               User user, Object player, Object byteBuf,
                                boolean autoProtocolTranslation) throws PacketProcessException {
         this.channel = channel;
         this.user = user;
@@ -78,20 +78,21 @@ public abstract class ProtocolPacketEvent<T> extends PacketEvent implements Play
             throw new PacketProcessException("Failed to read the Packet ID of a packet. (Size: " + size + ")");
         }
         ClientVersion version = serverVersion.toClientVersion();
-        this.packetType = PacketType.getById(packetSide, user.getConnectionState(),
+        ConnectionState state = packetSide == PacketSide.CLIENT ? user.getDecoderState() : user.getEncoderState();
+        this.packetType = PacketType.getById(packetSide, state,
                 version, packetID);
         if (this.packetType == null) {
-            // mojang fucked up and keeps sending disconnect packets in the wrong protocol state
+            // mojang messed up and keeps sending disconnect packets in the wrong protocol state
             if (PacketType.getById(packetSide, ConnectionState.PLAY, version, packetID) == PacketType.Play.Server.DISCONNECT) {
                 throw new InvalidDisconnectPacketSend();
             }
-            throw new PacketProcessException("Failed to map the Packet ID " + packetID + " to a PacketType constant. Bound: " + packetSide.getOpposite() + ", Connection state: " + user.getConnectionState() + ", Server version: " + serverVersion.getReleaseName());
+            throw new PacketProcessException("Failed to map the Packet ID " + packetID + " to a PacketType constant. Bound: " + packetSide.getOpposite() + ", Connection state: " + user.getDecoderState() + ", Server version: " + serverVersion.getReleaseName());
         }
-        this.connectionState = user.getConnectionState();
+        this.connectionState = state;
     }
 
     public ProtocolPacketEvent(int packetID, PacketTypeCommon packetType, ServerVersion serverVersion, Object channel,
-                               User user, T player, Object byteBuf) {
+                               User user, Object player, Object byteBuf) {
         this.channel = channel;
         this.user = user;
         this.player = player;
@@ -99,7 +100,9 @@ public abstract class ProtocolPacketEvent<T> extends PacketEvent implements Play
         this.byteBuf = byteBuf;
         this.packetID = packetID;
         this.packetType = packetType;
-        this.connectionState = user.getConnectionState();
+
+        this.connectionState = (packetType != null && packetType.getSide() == PacketSide.SERVER)
+                ? user.getEncoderState() : user.getDecoderState();
         cloned = true;
     }
 
@@ -130,8 +133,8 @@ public abstract class ProtocolPacketEvent<T> extends PacketEvent implements Play
     }
 
     @Override
-    public T getPlayer() {
-        return player;
+    public <T> T getPlayer() {
+        return (T) player;
     }
 
     public ConnectionState getConnectionState() {
@@ -166,7 +169,6 @@ public abstract class ProtocolPacketEvent<T> extends PacketEvent implements Play
         this.byteBuf = byteBuf;
     }
 
-    @Deprecated
     public int getPacketId() {
         return packetID;
     }
@@ -211,7 +213,7 @@ public abstract class ProtocolPacketEvent<T> extends PacketEvent implements Play
     }
 
     @Override
-    public ProtocolPacketEvent<?> clone() {
+    public ProtocolPacketEvent clone() {
         return this instanceof PacketReceiveEvent ? ((PacketReceiveEvent) this).clone()
                 : ((PacketSendEvent) this).clone();
     }

@@ -19,12 +19,23 @@
 package com.github.retrooper.packetevents.protocol.world.states.type;
 
 import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.protocol.mapper.MappedEntity;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.MaterialType;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
+import com.github.retrooper.packetevents.resources.ResourceLocation;
+import com.github.retrooper.packetevents.util.mappings.MappingHelper;
+import com.github.retrooper.packetevents.util.mappings.TypesBuilder;
+import com.github.retrooper.packetevents.util.mappings.TypesBuilderData;
+
+import java.util.Objects;
 
 public class StateType {
-    private final String name;
+
+    private final TypesBuilder typesBuilder;
+    private final TypesBuilderData typeData;
+    private final Mapped mapped = new Mapped();
+
     private final float blastResistance;
     private final float hardness;
     private final boolean isSolid;
@@ -34,8 +45,14 @@ public class StateType {
     private final boolean exceedsCube;
     private final MaterialType materialType;
 
-    public StateType(String name, float blastResistance, float hardness, boolean isSolid, boolean isBlocking, boolean isAir, boolean requiresCorrectTool, boolean isShapeExceedsCube, MaterialType materialType) {
-        this.name = name;
+    public StateType(
+            TypesBuilder typesBuilder, TypesBuilderData typeData,
+            float blastResistance, float hardness, boolean isSolid,
+            boolean isBlocking, boolean isAir, boolean requiresCorrectTool,
+            boolean isShapeExceedsCube, MaterialType materialType
+    ) {
+        this.typesBuilder = typesBuilder;
+        this.typeData = typeData;
         this.blastResistance = blastResistance;
         this.hardness = hardness;
         this.isSolid = isSolid;
@@ -44,6 +61,10 @@ public class StateType {
         this.requiresCorrectTool = requiresCorrectTool;
         this.exceedsCube = isShapeExceedsCube;
         this.materialType = materialType;
+    }
+
+    public Mapped getMapped() {
+        return this.mapped;
     }
 
     public WrappedBlockState createBlockState() {
@@ -55,7 +76,7 @@ public class StateType {
     }
 
     public String getName() {
-        return name;
+        return typeData.getName().getKey();
     }
 
     public float getBlastResistance() {
@@ -110,6 +131,44 @@ public class StateType {
 
     @Override
     public String toString() {
-        return name;
+        return getName();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        StateType stateType = (StateType) o;
+        return Float.compare(blastResistance, stateType.blastResistance) == 0
+                && Float.compare(hardness, stateType.hardness) == 0
+                && isSolid == stateType.isSolid
+                && isBlocking == stateType.isBlocking
+                && isAir == stateType.isAir
+                && requiresCorrectTool == stateType.requiresCorrectTool
+                && exceedsCube == stateType.exceedsCube
+                && Objects.equals(getName(), stateType.getName())
+                && materialType == stateType.materialType;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getName(), blastResistance, hardness, isSolid, isBlocking, isAir, requiresCorrectTool, exceedsCube, materialType);
+    }
+
+    public final class Mapped implements MappedEntity {
+
+        public StateType getStateType() {
+            return StateType.this;
+        }
+
+        @Override
+        public ResourceLocation getName() {
+            return typeData.getName();
+        }
+
+        @Override
+        public int getId(ClientVersion version) {
+            return MappingHelper.getId(version, typesBuilder, typeData);
+        }
     }
 }

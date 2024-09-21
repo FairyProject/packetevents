@@ -51,6 +51,8 @@ public class PacketEventsEncoder extends MessageToByteEncoder<ByteBuf> {
                 packetSendEvent.getLastUsedWrapper().write();
             }
             buffer.readerIndex(firstReaderIndex);
+        } else {
+            ByteBufHelper.clear(packetSendEvent.getByteBuf());
         }
         if (packetSendEvent.hasPostTasks()) {
             for (Runnable task : packetSendEvent.getPostTasks()) {
@@ -62,8 +64,14 @@ public class PacketEventsEncoder extends MessageToByteEncoder<ByteBuf> {
     @Override
     protected void encode(ChannelHandlerContext ctx, ByteBuf msg, ByteBuf out) throws Exception {
         if (!msg.isReadable()) return;
-        read(ctx, msg);
-        out.writeBytes(msg);
+
+        ByteBuf transformed = ctx.alloc().buffer().writeBytes(msg);
+        try {
+            read(ctx, transformed);
+            out.writeBytes(transformed);
+        } finally {
+            transformed.release();
+        }
     }
 
     @Override

@@ -19,6 +19,7 @@
 package com.github.retrooper.packetevents.settings;
 
 import com.github.retrooper.packetevents.util.TimeStampMode;
+import org.jetbrains.annotations.ApiStatus;
 
 import java.io.InputStream;
 import java.util.function.Function;
@@ -34,36 +35,34 @@ public class PacketEventsSettings {
     private TimeStampMode timestampMode = TimeStampMode.MILLIS;
     private boolean defaultReencode = true; // true for backwards compat and more idiot-proof
     private boolean checkForUpdates = true;
-    private boolean downsampleColors = true;
-    private boolean bStatsEnabled = true;
+    private boolean downsampleColors = false;
     private boolean debugEnabled = false;
+    private boolean fullStackTraceEnabled = false;
+    private boolean kickOnPacketExceptionEnabled = true;
+    private boolean kickIfTerminated = true;
     private Function<String, InputStream> resourceProvider = path -> PacketEventsSettings.class
             .getClassLoader()
             .getResourceAsStream(path);
 
     /**
      * Time stamp mode. How precise should the timestamps in the events be.
+     *
      * @param timeStampMode Time Stamp mode
      * @return Settings instance
      */
+    @ApiStatus.Internal
     public PacketEventsSettings timeStampMode(TimeStampMode timeStampMode) {
         this.timestampMode = timeStampMode;
         return this;
     }
 
     /**
-     * Get the timestamp mode
-     * @return Time Stamp Mode
-     */
-    public TimeStampMode getTimeStampMode() {
-        return timestampMode;
-    }
-
-    /**
      * Do we re-encode all packets by default?
+     *
      * @param reEncodeByDefault Value
      * @return Settings instance
      */
+    @ApiStatus.Internal
     public PacketEventsSettings reEncodeByDefault(boolean reEncodeByDefault) {
         this.defaultReencode = reEncodeByDefault;
         return this;
@@ -75,6 +74,7 @@ public class PacketEventsSettings {
      * @param checkForUpdates Value
      * @return Settings instance.
      */
+    @ApiStatus.Internal
     public PacketEventsSettings checkForUpdates(boolean checkForUpdates) {
         this.checkForUpdates = checkForUpdates;
         return this;
@@ -86,19 +86,21 @@ public class PacketEventsSettings {
      * @param downsampleColors Value
      * @return Settings instance.
      */
+    @ApiStatus.Internal
     public PacketEventsSettings downsampleColors(boolean downsampleColors) {
         this.downsampleColors = downsampleColors;
         return this;
     }
 
     /**
-     * This decides if PacketEvents should collect data anonymously and report to bStats.
+     * This used to decide if PacketEvents should collect data anonymously and report to bStats.
      *
      * @param bStatsEnabled Value
      * @return Settings instance.
+     * @deprecated This method has been deprecated. To disable bStats use the config file found in the bStats folder.
      */
+    @Deprecated()
     public PacketEventsSettings bStats(boolean bStatsEnabled) {
-        this.bStatsEnabled = bStatsEnabled;
         return this;
     }
 
@@ -108,8 +110,45 @@ public class PacketEventsSettings {
      * @param debugEnabled Value
      * @return Settings instance.
      */
+    @ApiStatus.Internal
     public PacketEventsSettings debug(boolean debugEnabled) {
         this.debugEnabled = debugEnabled;
+        return this;
+    }
+
+    /**
+     * This decides if PacketEvents should print packets error stacktrace
+     *
+     * @param fullStackTraceEnabled Value
+     * @return Settings instance.
+     */
+    @ApiStatus.Internal
+    public PacketEventsSettings fullStackTrace(boolean fullStackTraceEnabled) {
+        this.fullStackTraceEnabled = fullStackTraceEnabled;
+        return this;
+    }
+
+    /**
+     * This decides if PacketEvents should kick the player in case a packet exception occurs.
+     *
+     * @param kickOnPacketExceptionEnabled Value
+     * @return Settings instance.
+     */
+    @ApiStatus.Internal
+    public PacketEventsSettings kickOnPacketException(boolean kickOnPacketExceptionEnabled) {
+        this.kickOnPacketExceptionEnabled = kickOnPacketExceptionEnabled;
+        return this;
+    }
+
+    /**
+     * This decides if PacketEvents should kick the player on join if PacketEvents is terminated.
+     *
+     * @param kickIfTerminated Value
+     * @return Settings instance.
+     */
+    @ApiStatus.Internal
+    public PacketEventsSettings kickIfTerminated(boolean kickIfTerminated) {
+        this.kickIfTerminated = kickIfTerminated;
         return this;
     }
 
@@ -120,6 +159,7 @@ public class PacketEventsSettings {
      * @param resourceProvider Function
      * @return Settings instance.
      */
+    @ApiStatus.Internal
     public PacketEventsSettings customResourceProvider(Function<String, InputStream> resourceProvider) {
         this.resourceProvider = resourceProvider;
         return this;
@@ -127,6 +167,7 @@ public class PacketEventsSettings {
 
     /**
      * Should the packet listeners be read only?
+     *
      * @return Getter for {@link #defaultReencode}
      */
     public boolean reEncodeByDefault() {
@@ -155,10 +196,13 @@ public class PacketEventsSettings {
     /**
      * Should we collect server data anonymously and report to bStats?
      *
-     * @return Getter for {@link #bStatsEnabled}
+     * @return Getter for bStatsEnabled
+     * @deprecated This method has been deprecated, because the setter has been removed.
+     * Disabling bStats is now done through the bStats config file.
      */
+    @Deprecated
     public boolean isbStatsEnabled() {
-        return bStatsEnabled;
+        return true;
     }
 
     /**
@@ -171,11 +215,48 @@ public class PacketEventsSettings {
     }
 
     /**
+     * Should packetevents send packet exception Stacktraces to the console?
+     *
+     * @return Getter for {@link #fullStackTrace}
+     */
+    public boolean isFullStackTraceEnabled() {
+        return fullStackTraceEnabled;
+    }
+
+    /**
+     * Should packetevents kick the player due to an packet exception?
+     *
+     * @return Getter for {@link #kickOnPacketException}
+     */
+    public boolean isKickOnPacketExceptionEnabled() {
+        return kickOnPacketExceptionEnabled;
+    }
+
+    /**
+     * Should packetevents kick the player on join if PacketEvents is terminated?
+     *
+     * @return Getter for {@link #kickIfTerminated}
+     */
+    public boolean isKickIfTerminated() {
+        return kickIfTerminated;
+    }
+
+    /**
      * As described above, this method retrieves the function that acquires the InputStream
      * of a desired resource by its path.
+     *
      * @return Getter for {@link #resourceProvider}
      */
     public Function<String, InputStream> getResourceProvider() {
         return resourceProvider;
+    }
+
+    /**
+     * Get the timestamp mode
+     *
+     * @return Time Stamp Mode
+     */
+    public TimeStampMode getTimeStampMode() {
+        return timestampMode;
     }
 }
