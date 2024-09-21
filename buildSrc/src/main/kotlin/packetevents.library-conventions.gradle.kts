@@ -126,21 +126,15 @@ publishing {
 
     repositories {
         maven {
-            val snapshotUrl = "https://repo.codemc.io/repository/maven-snapshots/"
-            val releaseUrl = "https://repo.codemc.io/repository/maven-releases/"
-
-            // Check which URL should be used
-            url = uri(if ((version as String).endsWith("SNAPSHOT")) snapshotUrl else releaseUrl)
-
-            val mavenUsername = System.getenv("retrooper_username") ?: return@maven
-            val mavenPassword = System.getenv("retrooper_password") ?: return@maven
-
+            name = "Production"
+            url = uri("https://repo.imanity.dev/imanity-libraries/")
             credentials {
-                username = mavenUsername
-                password = mavenPassword
+                username = findProperty("imanityLibrariesUsername").toString()
+                password = findProperty("imanityLibrariesPassword").toString()
             }
         }
     }
+
 }
 
 // So that SNAPSHOT is always the latest SNAPSHOT
